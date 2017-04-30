@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <base target="_top">
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <!-- The CSS package above applies Google styling to buttons and other elements. -->
+    <style>
+        .branding-below {
+            bottom: 56px;
+            top: 0;
+        }
+
+        .branding-text {
+            left: 7px;
+            position: relative;
+            top: 3px;
+        }
+
+        .col-contain {
+            overflow: hidden;
+        }
+
+        .col-one {
+            float: left;
+            width: 50%;
+        }
+
+        .logo {
+            vertical-align: middle;
+        }
+
+        .radio-spacer {
+            height: 20px;
+        }
+
+        .width-100 {
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+<div class="sidebar branding-below">
+    <form>
+        <div class="block col-contain">
+            <div class="col-one">
+                <b>Converter Engine</b>
+                <div>
+                    <input type="radio" name="engine" id="radio-engine-websequence" value="websequence"
+                           checked="checked">
+                    <label for="radio-engine-websequence">Websequence</label>
+                </div>
+                <div>
+                    <input type="radio" name="engine" id="radio-engine-mermaid" value="mermaid">
+                    <label for="radio-engine-mermaid">Mermaid</label>
+                </div>
+            </div>
+            <div class="col-one">
+                <b>Theme</b>
+                <div>
+                    <select id="diagram-theme">
+                        <option value="default">default</option>
+                        <option value="earth">earth</option>
+                        <option value="magazine">magazine</option>
+                        <option value="modern-blue">modern-blue</option>
+                        <option value="mscgen">mscgen</option>
+                        <option value="napkin">napkin</option>
+                        <option value="omegapple">omegapple</option>
+                        <option value="patent">patent</option>
+                        <option value="qsd">qsd</option>
+                        <option value="rose">rose</option>
+                        <option value="roundgreen">roundgreen</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <hr />
+        <div class="block">
+            <h3>Markdown to Diagram</h3>
+            <div class="block" id="button-bar">
+                <button class="blue" id="preview-btn">Preview</button>
+                <button id="insert-diagram-btn">Insert Diagram</button>
+            </div>
+            <div class="block">
+                <div id="mermaid-svg"></div>
+            </div>
+            <h3>Diagram to Markdown</h3>
+            <div class="block" id="button-bar2">
+                <button class="blue" id="insert-text-btn">Insert Text</button>
+            </div>
+        </div>
+    </form>
+</div>
+<div class="sidebar bottom">
+    <img alt="Add-on logo" class="logo" src="http://www.freeiconspng.com/uploads/diagram-icon-4.jpg" width="27" height="27">
+    <span class="gray branding-text">Powered by Mermaid and Websequence</span>
+</div>
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+<?!= include('MarkdownDiagramManager.js') ?>
+<script>
+  $(function () {
+    google.script.run.withSuccessHandler(loadPreferences).withFailureHandler(showError).getPreferences();
+    markdownDiagramManager.init();
+    $('#preview-btn').on('click', previewDiagram);
+    $('#insert-diagram-btn').on('click', insertDiagram);
+    $('#insert-text-btn').on('click', insertText);
+  });
+
+  function loadPreferences(languagePrefs) {
+  }
+
+
+  function loadText(on_success, on_failed) {
+    google.script.run
+        .withSuccessHandler(on_success)
+        .withFailureHandler(on_failed)
+        .getSelectedText();
+  }
+
+  function previewDiagram() {
+    this.disabled = true;
+    $('#error').remove();
+    var btn = this;
+    loadText(function (text) {
+      console.log(text);
+      markdownDiagramManager.markdownToPng(text, function (blob) {
+        var node = document.getElementById("mermaid-svg");
+        var img = document.createElement("img");
+        img.onload = function() {
+          node.innerHTML = img.outerHTML;
+        };
+        img.setAttribute("src", blob);
+        btn.disabled = false;
+      });
+    }, function (msg) {
+      showError(msg, $('#button-bar'));
+      btn.disabled = false;
+    });
+  }
+
+  function insertDiagram() {
+    this.disabled = true;
+    $('#error').remove();
+    var btn = this;
+    loadText(function (text) {
+      console.log(text);
+      markdownDiagramManager.markdownToPng(text, function (blob) {
+        google.script.run
+            .withSuccessHandler(
+                function (returnSuccess, element) {
+                  element.disabled = false;
+                })
+            .withFailureHandler(
+                function (msg, element) {
+                  showError(msg, $('#button-bar'));
+                  element.disabled = false;
+                })
+            .withUserObject(btn)
+            .insertDiagram(blob.split(',')[1], markdownDiagramManager.getEditLink());
+      });
+    }, function (msg) {
+      showError(msg, $('#button-bar'));
+      btn.disabled = false;
+    });
+  }
+
+  function _insertText(text, ele) {
+    console.log(text);
+    google.script.run
+        .withSuccessHandler(
+            function (rtn, element) {
+              element.disabled = false;
+            })
+        .withFailureHandler(
+            function (msg, element) {
+              showError(msg, $('#button-bar'));
+              element.disabled = false;
+            })
+        .withUserObject(ele)
+        .insertText(text);
+  }
+
+  function insertText() {
+    this.disabled = true;
+    $('#error').remove();
+    var btn = this;
+    google.script.run
+        .withSuccessHandler(
+            function (linkText, element) {
+              console.log(linkText);
+              _insertText(markdownDiagramManager.linkToMarkdown(linkText), element);
+            })
+        .withFailureHandler(
+            function (msg, element) {
+              showError(msg, $('#button-bar'));
+              element.disabled = false;
+            })
+        .withUserObject(btn)
+        .getSelectedInlineImageLink();
+  }
+
+  function showError(msg, element) {
+    var div = $('<div id="error" class="error">' + msg + '</div>');
+    $(element).after(div);
+  }
+</script>
+</body>
+
+</html>

@@ -1,0 +1,37 @@
+<?!= include('api.js') ?>
+<script>
+  var markdownDiagramManager = {
+    markdown: null,
+    pngData: null,
+    config: {
+      maxSize: 1080
+    },
+
+    init: function(){
+      mermaidAPI.initialize({
+        startOnLoad: false
+      });
+    },
+
+    markdownToPng: function(markdown, callback) {
+      this.markdown = markdown;
+      var manager = this;
+      var api = mermaidApi();
+      var style = "default";
+      api.render(markdown, style, function(blob){
+        manager.pngData = blob;
+        callback(manager.pngData);
+      });
+    },
+
+
+    getEditLink: function(){
+      return "https://knsv.github.io/mermaid/live_editor/#/edit/" + btoa(this.markdown).replace('+', '-');
+    },
+
+    linkToMarkdown: function(link){
+      this.markdown = atob(link.substr("https://knsv.github.io/mermaid/live_editor/#/edit/".length).replace('-', '+'));
+      return this.markdown;
+    }
+  };
+</script>

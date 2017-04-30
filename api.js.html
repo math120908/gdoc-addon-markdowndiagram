@@ -1,0 +1,278 @@
+<script src="//cdnjs.cloudflare.com/ajax/libs/mermaid/7.0.0/mermaid.min.js"></script>
+<div id="svg-temp-node" style="visibility: hidden"></div>
+<script>
+  // Rewrite from http://www.websequencediagrams.com/service.js
+  var websequenceApi = function () {
+    function BitWriter() {
+      // encodes as URL-BASE64
+      this.str = "";
+      this.partial = 0;
+      this.partialSize = 0;
+      this.table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      this.addBits = function (bits, size) {
+        this.partial = (this.partial << size) | bits;
+        this.partialSize += size;
+        while (this.partialSize >= 6) {
+          this.str += this.table.charAt((this.partial >>
+              (this.partialSize - 6)) & 0x3f);
+          this.partialSize -= 6;
+        }
+      };
+      this.finish = function () {
+        if (this.partialSize) {
+          this.str += this.table.charAt(
+              ( this.partial << ( 6 - this.partialSize ) ) & 0x3f);
+          this.partialSize = 0;
+          this.partial = 0;
+        }
+      };
+    };
+
+    function encodeBase64(str) {
+      var writer = new BitWriter();
+      for (var n = 0; n < str.length; n++) {
+        writer.addBits(str.charCodeAt(n), 8);
+      }
+
+      writer.finish();
+
+      return writer.str;
+    };
+
+    function encodeUtf8(string) {
+      // fronm http://www.webtoolkit.info/
+      string = string.replace(/\r\n/g, "\n");
+      var utftext = "";
+
+      for (var n = 0; n < string.length; n++) {
+
+        var c = string.charCodeAt(n);
+
+        if (c < 128) {
+          utftext += String.fromCharCode(c);
+        }
+        else if ((c > 127) && (c < 2048)) {
+          utftext += String.fromCharCode((c >> 6) | 192);
+          utftext += String.fromCharCode((c & 63) | 128);
+        }
+        else {
+          utftext += String.fromCharCode((c >> 12) | 224);
+          utftext += String.fromCharCode(((c >> 6) & 63) | 128);
+          utftext += String.fromCharCode((c & 63) | 128);
+        }
+
+      }
+
+      return utftext;
+    };
+
+    function encodeNumber(num) {
+      // encodes a number in only as many bytes as required, 7 bits at a time.
+      // bit 8 is used to indicate whether another byte follows.
+      if (num >= 0x3FFF) {
+        return String.fromCharCode(0x80 | ( (num >> 14) & 0x7f )) +
+            String.fromCharCode(0x80 | ( (num >> 7) & 0x7f )) +
+            String.fromCharCode(num & 0x7f);
+      } else if (num >= 0x7F) {
+        return String.fromCharCode(0x80 | ( (num >> 7) & 0x7f )) +
+            String.fromCharCode(num & 0x7f);
+      } else {
+        return String.fromCharCode(num);
+      }
+    };
+
+    function encodeLz77(input) {
+      var MinStringLength = 4;
+
+      var output = "";
+      var pos = 0;
+      var hash = {};
+
+      // set last pos to just after the last chunk.
+      var lastPos = input.length - MinStringLength;
+
+      for (var i = MinStringLength; i < input.length; i++) {
+        var subs = input.substr(i - MinStringLength, MinStringLength);
+        if (hash[subs] === undefined) {
+          hash[subs] = [];
+        }
+        hash[subs].push(i - MinStringLength);
+        //document.write("subs[" + subs + "]=" + (pos - MinStringLength) + "<br>");
+      }
+
+      // loop until pos reaches the last chunk.
+      while (pos < lastPos) {
+
+        // search start is the current position minus the window size, capped
+        // at the beginning of the string.
+        var matchLength = MinStringLength;
+        var foundMatch = false;
+        var bestMatch = {distance: 0, length: 0};
+        var prefix = input.substr(pos, MinStringLength);
+        var matches = hash[prefix];
+
+        // loop until the end of the matched region reaches the current
+        // position.
+        //while ((searchStart + matchLength) < pos) {
+        if (matches !== undefined) {
+          for (var i = 0; i < matches.length; i++) {
+            var searchStart = matches[i];
+            if (searchStart + matchLength >= pos) {
+              break;
+            }
+
+            while (searchStart + matchLength < pos) {
+              // check if string matches.
+              var isValidMatch = (
+                  (input.substr(searchStart, matchLength) == input.substr(pos, matchLength))
+              );
+              if (isValidMatch) {
+                // we found at least one match. try for a larger one.
+                var realMatchLength = matchLength;
+                matchLength++;
+                if (foundMatch && (realMatchLength > bestMatch.length)) {
+                  bestMatch.distance = pos - searchStart - realMatchLength;
+                  bestMatch.length = realMatchLength;
+                }
+                foundMatch = true;
+              } else {
+                break;
+              }
+            }
+          }
+        }
+
+        if (bestMatch.length) {
+          output += String.fromCharCode(0) +
+              encodeNumber(bestMatch.distance) +
+              encodeNumber(bestMatch.length);
+
+          pos += bestMatch.length;
+        } else {
+          if (input.charCodeAt(pos) !== 0) {
+            output += input.charAt(pos);
+          } else {
+            output += String.fromCharCode(0) +
+                String.fromCharCode(0);
+          }
+          pos++;
+        }
+      }
+      return output + input.slice(pos).replace(/\0/g, "\0\0");
+    };
+
+    function getText(node) {
+      var text = "";
+      for (var i = 0; i < node.childNodes.length; i++) {
+        var child = node.childNodes[i];
+        if (child.nodeType == 3) {
+          text += child.data;
+        } else {
+          text += getText(child);
+        }
+      }
+      return text;
+    };
+
+    var hostname = "http://www.websequencediagrams.com/";
+    var getImageURL = function (wsd_text, wsd_style) {
+      var style = wsd_style ? "&s=" + wsd_style : "";
+
+      var text = encodeBase64(encodeLz77(encodeUtf8(wsd_text)));
+      var str = hostname + "cgi-bin/cdraw?lz=" + text + style;
+
+      if (str.length < 2048) {
+        return str;
+      } else {
+        console.error('Diagram too large for web service.');
+        return "";
+      }
+    }
+    this.render = function (text, options, onSuccess, onFailed) {
+      let imageURL = getImageURL(text, options.style || 'default');
+      var img = new Image();
+      img.onload = function () {
+        var canvas = document.createElement("canvas");
+        canvas.width = this.width;
+        canvas.height = this.height;
+
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(this, 0, 0);
+
+        var dataURL = canvas.toDataURL("image/png");
+
+        var blob = dataURL; //.replace(/^data:image\/(png|jpg);base64,/, "");
+
+        if ( blob )
+          onSuccess(blob);
+        else
+          onFailed('Empty data blob');
+      };
+      img.src = imageURL;
+    };
+    return this;
+  };
+
+  var mermaidApi = function () {
+    var tempnode = document.getElementById("svg-temp-node");
+    var svgToPng = function (node, maxSize, callback) {
+      var svg = node.querySelector("svg");
+
+      if (typeof svg == "undefined") {
+        throw('svg code not found');
+      }
+
+      var svgData;
+      if (typeof window.XMLSerializer != "undefined") {
+        svgData = (new XMLSerializer()).serializeToString(svg);
+      } else if (typeof svg.xml != "undefined") {
+        svgData = svg.xml;
+      }
+
+      var canvas = document.createElement("canvas");
+      var svgSize = svg.getBoundingClientRect();
+      var ratio = Math.max(1, Math.min(maxSize / svgSize.width, maxSize / svgSize.height));
+      canvas.width = svgSize.width * ratio;
+      canvas.height = svgSize.height * ratio;
+      var ctx = canvas.getContext("2d");
+
+      var img = document.createElement("img");
+      img.onload = function () {
+        ctx.drawImage(img, 0, 0);
+        var imgsrc = canvas.toDataURL("image/png");
+        callback(imgsrc);
+      };
+      img.setAttribute("src", "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData))));
+    };
+    /**
+     * @name render
+     * @param {string} text Text to convert
+     * @param {string} options options
+     * @param {successCallback} onSuccess
+     * @param {failedCallback} onFailed
+     *
+     * @callback successCallback
+     * @param {string} blob base64encoded dataURI with mimetype prefix
+     *
+     * @callback failedCallback
+     * @param {Error} error
+     */
+    this.render = function (text, options, onSuccess, onFailed) {
+      try {
+        var uniqueID = "rd-" + (Math.floor(Math.random() * 100000000)).toString(36);
+        mermaidAPI.render(uniqueID, text, function (svgCode, bindFunction) {
+          tempnode.innerHTML = svgCode;
+          svgToPng(tempnode, options.maxSize || 1024, function (blob) {
+            tempnode.innerHTML = "";
+            onSuccess(blob);
+          })
+        });
+      } catch (e) {
+        (onFailed || function (er) {
+          console.error(er);
+        })(e);
+      }
+    };
+    return this;
+  }
+</script>
